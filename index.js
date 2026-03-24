@@ -10,7 +10,12 @@ app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
 
-app.get("/", (req, res) => {
-    console.log("Hello World");
-    res.json({ status: 200, message: "Uste no mete cabra sarabambiche" });
+let todos = [
+    {id: 1, title: "Comprar leche", completed: false},
+    {id: 2, title: "Hacer ejercicio", completed: true},
+];
+
+app.get("/todo", (req, res) => {
+    res.json({ status: 200, message: "Todos los elementos", data: todos });
 });
+
