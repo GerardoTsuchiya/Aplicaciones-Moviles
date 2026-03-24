@@ -28,3 +28,9 @@ app.get("/todo/:id", (req, res) => {
     res.json({ status: 200, message: "Todo found", data: todo });
 });
 
+app.post("/todo", (req, res) => {
+    const { title } = req.body;
+    if(!title || title.trim() === "") {
+        return res.status(400).json({ status: 400, message: "Title is required" });
+    }
+});
