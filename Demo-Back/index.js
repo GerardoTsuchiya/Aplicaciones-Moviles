@@ -61,11 +61,20 @@ app.patch("/todo/:id", (req, res) => {
     if (!todo) {
         return res.status(404).json({ status: 404, message: "Todo not found" });
     }
-    const { title } = req.body;
-    if (!title || title.trim() === "") {
+    const { title, completed } = req.body;
+
+    if (title !== undefined && title.trim() === "") {
         return res.status(400).json({ status: 400, message: "Title is required" });
     }
-    todo.title = title.trim();
+
+    if (title !== undefined) {
+        todo.title = title.trim();
+    }
+
+    if (completed !== undefined) {
+        todo.completed = Boolean(completed);
+    }
+
     res.json({ status: 200, message: "Todo updated", data: todo });
 });
 
