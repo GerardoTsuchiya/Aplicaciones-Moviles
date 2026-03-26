@@ -13,9 +13,10 @@ Add two new endpoints to `index.js`: `PATCH /todo/:id` to update a todo's title,
 
 - **Purpose:** Update the `title` of an existing todo.
 - **Body:** `{ "title": "nuevo título" }`
-- **Validation:** `title` must be present and non-empty (whitespace-only rejected).
+- **Validation:** `title` must be present and non-empty (whitespace-only rejected). The title is trimmed before saving, consistent with `POST /todo`.
+- **Ignored fields:** Any fields other than `title` in the request body are silently ignored.
 - **Errors:**
-  - `404` if ID not found: `{ status: 404, message: "Todo not found" }`
+  - `404` if ID not found: `{ status: 404, message: "Todo not found" }`. A non-numeric `:id` will not match any element and also returns `404`.
   - `400` if title is missing or blank: `{ status: 400, message: "Title is required" }`
 - **Success:** `200` with the updated todo: `{ status: 200, message: "Todo updated", data: <todo> }`
 - **Mutation:** Updates the `title` field in-place on the array element.
@@ -24,9 +25,9 @@ Add two new endpoints to `index.js`: `PATCH /todo/:id` to update a todo's title,
 
 - **Purpose:** Remove a todo by ID.
 - **Errors:**
-  - `404` if ID not found: `{ status: 404, message: "Todo not found" }`
+  - `404` if ID not found: `{ status: 404, message: "Todo not found" }`. A non-numeric `:id` will not match any element and also returns `404`.
 - **Success:** `200` with the deleted todo: `{ status: 200, message: "Todo deleted", data: <todo> }`
-- **Mutation:** Removes the element from the array using `splice`.
+- **Mutation:** Removes the element from the array using `splice`. Note: since ID assignment in `POST /todo` uses `last.id + 1`, IDs can be reused after deletion — this is expected behavior in this in-memory implementation.
 
 ## Dead Code Removal
 
