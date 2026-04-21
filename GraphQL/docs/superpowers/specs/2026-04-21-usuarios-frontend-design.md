@@ -64,8 +64,43 @@ HomeScreen
 
 ---
 
+## Preparación para autenticación futura
+
+El profesor implementará login con bcrypt + JWT (access token + refresh token) en una clase próxima. Para no reescribir código cuando llegue ese momento:
+
+### `lib/authContext.tsx` (nuevo)
+
+Contexto mínimo que almacena los tokens. Hoy los valores son `null`; cuando el login esté listo, solo habrá que poblarlos.
+
+```ts
+type AuthState = {
+  accessToken: string | null;
+  refreshToken: string | null;
+  setTokens: (access: string, refresh: string) => void;
+  clearTokens: () => void;
+};
+```
+
+`App.tsx` envuelve toda la app con `<AuthProvider>`.
+
+### `lib/api.ts` — firma extendida
+
+`apiGraphqlFetch` acepta un token opcional para que las queries protegidas futuras no requieran reescribir la función:
+
+```ts
+export async function apiGraphqlFetch<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+  token?: string | null   // ← nuevo parámetro opcional
+): Promise<T>
+```
+
+Cuando `token` está presente, se incluye `Authorization: Bearer <token>` en el header.
+
+---
+
 ## Restricciones
 
 - No agregar navegación ni rutas nuevas — todo en la pantalla actual.
-- No instalar librerías nuevas — usar primitivos de React Native (`Modal`, `Animated`, `TextInput`).
+- No instalar librerías nuevas — usar primitivos de React Native (`Modal`, `Animated`, `TextInput`) y `createContext` de React.
 - Mantener el patrón existente: queries en `features/<domain>/queries.ts`, tipos en `features/<domain>/types.ts`.
