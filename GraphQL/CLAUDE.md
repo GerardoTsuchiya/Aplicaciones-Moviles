@@ -123,24 +123,25 @@ JWT_SECRET="uabc-aplicaciones-moviles-jwt-secret-2026"
 - `dotenv/config` imported at top of `main.ts` — ensures `JWT_SECRET` is available at module init time
 - `auth/` module fully implemented:
   - `LoginInput` DTO with `@IsEmail()` + `@MinLength(6)` on password
-  - `AuthResponse` entity with `accessToken` field
-  - `AuthService` — `validateUser()` with `bcrypt.compare()`, `login()` signs JWT
+  - `AuthResponse` entity with `accessToken` + `refreshToken` fields
+  - `AuthService` — `validateUser()` with `bcrypt.compare()`; `login()` and `refresh()` both call `signTokens()`; `signTokens()` signs two JWTs with `type: 'access'` (15m) and `type: 'refresh'` (7d)
   - `JwtStrategy` — reads `Bearer` token from `Authorization` header, `validate()` returns `{ id, email }`
   - `GqlAuthGuard` — extends `AuthGuard('jwt')`, overrides `getRequest()` for GraphQL context
-  - `AuthModule` — imports `UsuarioModule`, `PassportModule`, `JwtModule` (secret from env, `expiresIn: '15m'`)
-- `removeUsuario` mutation is protected with `@UseGuards(GqlAuthGuard)`
+  - `AuthModule` — imports `UsuarioModule`, `PassportModule`, `JwtModule` (secret from env, default `expiresIn: '15m'`)
+- `createUsuario` and `removeUsuario` mutations are protected with `@UseGuards(GqlAuthGuard)`
 
 ### Auth notes
 
 - `password` field is NOT exposed in `UsuarioEntity` (no `@Field()`) — never returned by GraphQL
-- JWT payload: `{ sub: user.id, email: user.email }` — `sub` maps to `id` in `JwtStrategy.validate()`
+- JWT payload: `{ sub: user.id, email: user.email, type: 'access'|'refresh' }` — `sub` maps to `id` in `JwtStrategy.validate()`
+- `refresh()` in `AuthService` rejects tokens where `type !== 'refresh'` to prevent access tokens being used as refresh tokens
 - `GqlAuthGuard` is necessary because `AuthGuard('jwt')` reads HTTP context by default; GraphQL needs `GqlExecutionContext.create(context).getContext().req`
 
 ---
 
 ## Frontend
 
-**Stack:** Expo 54 · React Native · TypeScript · TanStack Query v5
+**Stack:** Expo 54 · React Native · TypeScript · TanStack Query v5 · expo-secure-store
 
 ### Commands (run from `Frontend/`)
 
@@ -156,35 +157,48 @@ npm run ios          # iOS simulator
 EXPO_PUBLIC_API_URL="http://<YOUR_LAN_IP>:3000/graphql"
 ```
 
-Physical devices cannot reach `localhost` — they need the LAN IP of the machine running the backend. Update this if the network changes.
+Physical devices cannot reach `localhost` — they need the LAN IP of the machine running the backend. Update this if the network changes. **Restart the Expo dev server after changing `.env`** — `EXPO_PUBLIC_*` variables are only read at startup.
 
 ### Architecture
 
-- `lib/api.ts` — `apiFetch` (REST) and `apiGraphqlFetch(query, variables?, token?)` (GraphQL)
-- `lib/authContext.tsx` — `AuthContext` with `accessToken`, `refreshToken`, `setTokens`, `clearTokens` (tokens are **in-memory only**, not persisted yet — SecureStore implementation pending)
+- `lib/api.ts` — `apiFetch` (REST) and `apiGraphqlFetch(query, variables?, token?, authOptions?)` (GraphQL). `AuthOptions` enables auto-refresh: on `Unauthorized` error, calls `refreshToken` mutation and retries once. Backward compatible — existing calls without `authOptions` work unchanged.
+- `lib/authContext.tsx` — `AuthContext` with `accessToken`, `refreshToken`, `isLoading`, `setTokens`, `clearTokens`. Reads both tokens from `expo-secure-store` on mount. `setTokens` / `clearTokens` update state AND SecureStore. `isLoading` is `true` while reading SecureStore to prevent LoginScreen flash.
 - `lib/queryClient.ts` — shared TanStack Query client
 - `features/<domain>/queries.ts` — hooks using `useQuery`/`useMutation`
 - `features/<domain>/types.ts` — TypeScript interfaces
 
 ### Implemented screens
 
+**App.tsx** — conditional rendering via `AppContent` component (child of `AuthProvider`):
+- `isLoading` → `<ActivityIndicator>`
+- `!accessToken` → `<LoginScreen>`
+- authenticated → `<HomeScreen>`
+
+**LoginScreen** (`features/auth/LoginScreen.tsx`)
+- Email + password form
+- Calls `useLogin`, disables button while `isPending`
+- On success: `setTokens(access, refresh)` → App re-renders → HomeScreen
+- Shows server error below password field
+
 **HomeScreen** (`features/index/HomeScreen.tsx`)
 - `FlatList` of users with avatar (first letter), name, email
 - FAB (+) bottom-right opens `AddUserModal`
-- Uses `isLoading` (not `isFetching`) for the loading guard
 
 **AddUserModal** (`features/user/AddUserModal.tsx`)
 - Animated bottom sheet (`Animated.spring`)
-- Fields: Name (optional), Email (required)
-- Calls `useCreateUser`, disables Guardar while `isPending`
+- Fields: Name (optional), Email (required), Password (required, min 6 chars)
+- Calls `useCreateUser` (protected — requires JWT), disables Guardar while `isPending`
 - On success: closes modal, clears form, invalidates `['users']` query
-- Shows server error (e.g. duplicate email) below the Email field
+- Shows validation/server error below the Password field
 
 ### Hooks
 
+**`features/auth/queries.ts`**
+- `useLogin()` — mutation `login(loginInput: { email, password })` → calls `setTokens` on success
+
 **`features/user/queries.ts`**
-- `useUsers()` — queries `usuarios { id email name createAt }`
-- `useCreateUser()` — mutation `createUsuario(createUsuarioInput: { email, name })`
+- `useUsers()` — queries `usuarios { id email name createAt }` (public)
+- `useCreateUser()` — mutation `createUsuario(createUsuarioInput: { email, name?, password })` — passes `accessToken` + `authOptions` for auto-refresh (protected)
 
 ---
 
@@ -194,10 +208,11 @@ Physical devices cannot reach `localhost` — they need the LAN IP of the machin
 |---|---|---|---|
 | `usuarios` | Query | ❌ | ✅ Prisma wired |
 | `usuario(id)` | Query | ❌ | ✅ Prisma wired |
-| `createUsuario` | Mutation | ❌ | ✅ Prisma wired |
+| `createUsuario` | Mutation | ✅ JWT | ✅ Prisma wired |
 | `updateUsuario` | Mutation | ❌ | ✅ Prisma wired |
 | `removeUsuario` | Mutation | ✅ JWT | ✅ Prisma wired |
-| `login` | Mutation | ❌ | ✅ returns `accessToken` |
+| `login` | Mutation | ❌ | ✅ returns `accessToken` + `refreshToken` |
+| `refreshToken(token)` | Mutation | ❌ | ✅ verifies refresh JWT, returns new pair |
 | `todos` | Query | ❌ | ⚠️ Placeholder |
 | `todo(id)` | Query | ❌ | ⚠️ Placeholder |
 | `createTodo` | Mutation | ❌ | ⚠️ Placeholder |
@@ -208,28 +223,11 @@ Physical devices cannot reach `localhost` — they need the LAN IP of the machin
 
 ## What's next
 
-### SecureStore + Refresh Token + Login Screen
-Design spec: `docs/superpowers/specs/2026-04-27-securestore-auth-design.md`
-Implementation plan: pending (to be generated from spec)
-
-Summary of what needs to be built:
-
-**Backend:**
-- `AuthResponse` — add `refreshToken` field
-- `AuthService` — refactor `login()` to call new `signTokens()` helper; add `refresh()` method that verifies refresh JWT and returns new pair
-- `AuthResolver` — add `refreshToken(token: String!)` mutation
-- Token strategy: access = `{ sub, email, type: 'access' }` 15m; refresh = `{ sub, email, type: 'refresh' }` 7d
-
-**Frontend:**
-- Install `expo-secure-store` with `npx expo install expo-secure-store`
-- `lib/authContext.tsx` — add `isLoading: boolean`; on mount read both tokens from SecureStore; `setTokens` saves to SecureStore; `clearTokens` deletes from SecureStore
-- `lib/api.ts` — add auto-refresh: if response errors with `Unauthorized` and `refreshToken` exists, call `refreshToken` mutation, update tokens, retry once
-- `features/auth/LoginScreen.tsx` — email + password form, calls `useLogin`, on success calls `setTokens`
-- `features/auth/queries.ts` — `useLogin()` hook
-- `App.tsx` — conditional rendering: `isLoading` → spinner; no `accessToken` → `LoginScreen`; authenticated → `HomeScreen`
-
 ### Navigation library
 Not yet chosen — wait for professor's instructions before adding React Navigation or Expo Router.
+
+### Logout button
+No logout button in the UI yet. Can be added with a single call to `clearTokens()` from `useAuth()` — it clears state and deletes both keys from SecureStore.
 
 ### Todo module
 `TodoService` still returns placeholder strings. Needs to be wired to Prisma.
