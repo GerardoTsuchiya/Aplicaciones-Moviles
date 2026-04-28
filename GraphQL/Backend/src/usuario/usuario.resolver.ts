@@ -10,6 +10,7 @@ import { GqlAuthGuard } from '../auth/gql-auth.guard';
 export class UsuarioResolver {
   constructor(private readonly usuarioService: UsuarioService) {}
 
+  @UseGuards(GqlAuthGuard)
   @Mutation(() => Usuario)
   createUsuario(@Args('createUsuarioInput') createUsuarioInput: CreateUsuarioInput) {
     return this.usuarioService.create(createUsuarioInput);

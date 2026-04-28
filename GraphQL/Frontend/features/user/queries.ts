@@ -1,5 +1,6 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiGraphqlFetch } from '../../lib/api';
+import { useAuth } from '../../lib/authContext';
 import { User } from './types';
 import { queryClient } from '../../lib/queryClient';
 
@@ -23,18 +24,21 @@ export function useUsers() {
 }
 
 export function useCreateUser() {
+    const { accessToken, refreshToken, setTokens, clearTokens } = useAuth();
     return useMutation({
-        mutationFn: async (newUser: { name?: string; email: string }) => {
+        mutationFn: async (newUser: { name?: string; email: string; password: string }) => {
             const data = await apiGraphqlFetch<{ createUsuario: User }>(
-                `mutation CreateUsuario($email: String!, $name: String) {
-                    createUsuario(createUsuarioInput: { email: $email, name: $name }) {
+                `mutation CreateUsuario($input: CreateUsuarioInput!) {
+                    createUsuario(createUsuarioInput: $input) {
                         id
                         email
                         name
                         createAt
                     }
                 }`,
-                { email: newUser.email, name: newUser.name ?? null },
+                { input: { email: newUser.email, name: newUser.name ?? null, password: newUser.password } },
+                accessToken,
+                { refreshToken, setTokens, clearTokens },
             );
             return data.createUsuario;
         },

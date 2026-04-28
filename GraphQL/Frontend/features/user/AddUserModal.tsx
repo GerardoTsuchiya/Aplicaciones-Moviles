@@ -20,6 +20,7 @@ type Props = {
 export default function AddUserModal({ visible, onClose }: Props) {
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
     const [fieldError, setFieldError] = useState<string | null>(null);
     const slideAnim = useRef(new Animated.Value(300)).current;
 
@@ -39,6 +40,7 @@ export default function AddUserModal({ visible, onClose }: Props) {
     const handleClose = () => {
         setName('');
         setEmail('');
+        setPassword('');
         setFieldError(null);
         onClose();
     };
@@ -48,9 +50,17 @@ export default function AddUserModal({ visible, onClose }: Props) {
             setFieldError('El email es requerido.');
             return;
         }
+        if (!password.trim()) {
+            setFieldError('La contraseña es requerida.');
+            return;
+        }
+        if (password.trim().length < 6) {
+            setFieldError('La contraseña debe tener al menos 6 caracteres.');
+            return;
+        }
         setFieldError(null);
         createUser(
-            { name: name.trim() || undefined, email: email.trim() },
+            { name: name.trim() || undefined, email: email.trim(), password: password.trim() },
             {
                 onSuccess: handleClose,
                 onError: (error: Error) => setFieldError(error.message),
@@ -88,12 +98,23 @@ export default function AddUserModal({ visible, onClose }: Props) {
                         Email <Text style={styles.required}>*</Text>
                     </Text>
                     <TextInput
-                        style={[styles.input, fieldError ? styles.inputError : null]}
+                        style={styles.input}
                         placeholder="Ej. gerardo@uabc.edu.mx"
                         value={email}
                         onChangeText={(t) => { setEmail(t); setFieldError(null); }}
                         keyboardType="email-address"
                         autoCapitalize="none"
+                    />
+
+                    <Text style={styles.label}>
+                        Contraseña <Text style={styles.required}>*</Text>
+                    </Text>
+                    <TextInput
+                        style={[styles.input, fieldError ? styles.inputError : null]}
+                        placeholder="Mínimo 6 caracteres"
+                        value={password}
+                        onChangeText={(t) => { setPassword(t); setFieldError(null); }}
+                        secureTextEntry
                     />
                     {fieldError && <Text style={styles.errorText}>{fieldError}</Text>}
 
