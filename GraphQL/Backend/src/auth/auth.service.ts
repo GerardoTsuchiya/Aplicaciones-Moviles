@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UsuarioService } from '../usuario/usuario.service';
 import { LoginInput } from './dto/login.input';
+import { AuthResponse } from './entities/auth-response.entity';
 
 @Injectable()
 export class AuthService {
@@ -11,7 +12,6 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  // Verifica credenciales. Retorna el usuario sin password, o null si falla.
   async validateUser(email: string, password: string) {
     const user = await this.usuarioService.findByEmail(email);
     if (!user) return null;
@@ -23,11 +23,28 @@ export class AuthService {
     return result;
   }
 
-  async login(loginInput: LoginInput) {
+  async login(loginInput: LoginInput): Promise<AuthResponse> {
     const user = await this.validateUser(loginInput.email, loginInput.password);
     if (!user) throw new UnauthorizedException('Credenciales inválidas');
+    return this.signTokens(user.id, user.email);
+  }
 
-    const payload = { sub: user.id, email: user.email };
-    return { accessToken: this.jwtService.sign(payload) };
+  async refresh(token: string): Promise<AuthResponse> {
+    let payload: { sub: number; email: string; type: string };
+    try {
+      payload = this.jwtService.verify<{ sub: number; email: string; type: string }>(token);
+    } catch {
+      throw new UnauthorizedException('Token inválido o expirado');
+    }
+    if (payload.type !== 'refresh') throw new UnauthorizedException('Token inválido');
+    return this.signTokens(payload.sub, payload.email);
+  }
+
+  private signTokens(userId: number, email: string): AuthResponse {
+    const base = { sub: userId, email };
+    return {
+      accessToken:  this.jwtService.sign({ ...base, type: 'access' },  { expiresIn: '15m' }),
+      refreshToken: this.jwtService.sign({ ...base, type: 'refresh' }, { expiresIn: '7d' }),
+    };
   }
 }
